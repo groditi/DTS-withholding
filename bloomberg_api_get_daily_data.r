@@ -1,4 +1,3 @@
-library("seasonal")
 library(Rblpapi)
 library("xts")
 
