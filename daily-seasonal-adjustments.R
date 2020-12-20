@@ -101,6 +101,20 @@ daily_model_data <- daily_actuals %>% rename(date = Index) %>%
     prev.date = lag(date),
     next.date = lead(date),
     
+    is.wednesday.semiweekly = as.integer(
+      (weekday == 2 & lag(weekday, 2) == 0 & lag(weekday, 1) == 1) | #normal
+      (weekday == 3 & ( #thursday where any of prev mon tues or weds are were off
+        (lag(weekday, 3) != 0 | lag(weekday, 2) != 1) | lag(weekday, 1) != 2)
+      )
+    ),
+    is.friday.semiweekly = as.integer(
+      (weekday == 4 & lag(weekday, 2) == 2 & lag(weekday, 1) == 3) | #normal
+      (weekday == 0 & ( #monday where any of prev fri thurs weds were off
+        (lag(weekday, 3) != 2 | lag(weekday, 2) != 3) | lag(weekday, 1) != 4)
+      )
+    ),
+ 
+    
     #month and year start flags for calendar-tern pattern
     is.month.start = as.integer(month(prev.date) != month(date)),
     is.month.end = as.integer(month(next.date) != month(date)),
@@ -116,11 +130,14 @@ daily_model_data <- daily_actuals %>% rename(date = Index) %>%
     
     #monthly predicates for monthly patterns
     # sixteen means calendar day 16 or the next business day
-    is.sixteen = as.integer(day(prev.date) < 16 & day(next.date) > 16),
+    is.fifteen = as.integer(day(prev.date) < 15 & day(next.date) > 15 & day(date) >= 15 ),
+    is.sixteen = as.integer(day(prev.date) < 16 & day(next.date) > 16 & day(date) >= 16 ),
 
     #payroll calendar for the second and 11th business day of the month
     is.second = as.integer(business.day.of.month == 2),
     is.eleventh = as.integer(business.day.of.month == 11),
+    is.third = as.integer(business.day.of.month == 3),
+    is.twelveth = as.integer(business.day.of.month == 12),
     
     #special patterns based on holidays or tax deadlines
     is.xmas = as.integer(month(date) == 12 & day(date) < 25 & day(next.date) > 25),
@@ -144,11 +161,21 @@ daily_model_data <- daily_actuals %>% rename(date = Index) %>%
     
     # these mondays are just special. i think this might be the federal payroll pattern tbh
     #bimonthly monday predicates.. if you change the & to && the code breaks tidyeval lol
-    is.third.monday = as.integer(third.monday.date > prev.date & third.monday.date < next.date),
-    is.first.monday = as.integer(first.monday.date > prev.date & first.monday.date < next.date),
-    is.first.wednesday = as.integer(first.wednesday.date > prev.date & first.wednesday.date < next.date),
-    is.first.friday = as.integer(first.friday.date > prev.date & first.friday.date < next.date),
-    is.first.semiweekly = as.integer(first.semiweekly.date > prev.date & first.semiweekly.date < next.date),
+    is.third.monday = as.integer(
+      third.monday.date > prev.date & third.monday.date < next.date & date >= third.monday.date
+    ),
+    is.first.monday = as.integer(
+      first.monday.date > prev.date & first.monday.date < next.date & date >= first.monday.date
+    ),
+    is.first.wednesday = as.integer(
+      first.wednesday.date > prev.date & first.wednesday.date < next.date & date >= first.wednesday.date
+    ),
+    is.first.friday = as.integer(
+      first.friday.date > prev.date & first.friday.date < next.date & date >= first.friday.date
+    ),
+    is.first.semiweekly = as.integer(
+      business.day.of.month <= 3 & (is.friday.semiweekly | is.wednesday.semiweekly)
+    ),
 
 ##originally wanted to try this as a cyclical flag for longer multi-year cycles but it wasnt right 
 #     month.starts.sunday = as.integer(wday(floor_date(date,"months")) == 0),
@@ -178,20 +205,25 @@ pre_covid <- daily_model_data %>%
   mutate(
     pct.deposit = deposit.amount / day.average,
 #    month.stage =  as.integer(business.day.of.month > 21),
-    business.day.pct = day.count / month.length,
+    business.day.pct = (day.count / month.length),
     days.to.end = day.count - business.day.of.month, 
     # is.fifth.week = as.integer(business.day.of.month > 20 & day.count >= 22),
   )
 
+
+# is.eleventh +  is.third.monday + is.first.wednesday +
 #compute the model
 daily_patterns = lm(
-  pct.deposit ~ is.monday + is.wednesday + is.thursday + is.friday +
-      is.sixteen + is.eleventh + is.second + is.month.start + is.month.end + 
+  pct.deposit ~ is.monday + is.wednesday + is.thursday + is.friday + is.fifteen +
+      is.sixteen +  is.second + is.third + is.month.start + is.month.end + 
       is.year.start + is.year.end + is.march.sixteen + is.april.sixteen +
       is.tax.season  + is.post.thanksgiving + is.xmas + business.day.pct +
-      is.third.monday + is.first.wednesday + is.first.friday, 
+      is.first.wednesday + is.twelveth +
+      is.wednesday.semiweekly + is.friday.semiweekly,
    data = pre_covid
 )
+
+
 
 # merge the model_data with the fitted values and residuals
 # and add a new columns for diagnostics
@@ -292,7 +324,7 @@ check_data %>% select(mtd.error, business.day.of.month) %>%
 #     median.est = median(mtd.precision),
 #     mad.est = mad(mtd.precision)
 #   )
-# 
+#
 # ggplot() + geom_point(
 #   data = error_plot_data,
 #   mapping = aes(x = business.day.of.month, y=mtd.precision),
@@ -327,4 +359,4 @@ check_data %>% select(mtd.error, business.day.of.month) %>%
 #     color = "royalblue4",
 #     alpha = 0.6
 #   )
-# 
+#

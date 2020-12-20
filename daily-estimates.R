@@ -7,7 +7,7 @@ library(tibble)
 
 coeff_table <- read_csv(file.path("etc", "daily-model-coefficients.csv"))
 
-seats_forecasts <- read_csv(file.path("etc", "withholding-monthly-forecasts.csv")) %>%
+seats_forecasts <- read_csv(file.path("etc", "pre-covid-withholding-monthly-forecasts.csv")) %>%
   mutate(year.month = as.yearmon(date))
 
 daily_model_data <- read_csv(file.path("etc", "daily-all-data.csv")) %>%
@@ -17,10 +17,10 @@ y_intercept <- coeff_table$estimate[1]
 term_names <- coeff_table$term[-1]
 coefficient_values <- coeff_table$estimate[-1]
 
-#april isnt done yet so back-fill it for now
+#may isnt done yet so back-fill it for now
 post_covid <- daily_model_data %>% filter(year.month >= 2020) %>%
   mutate(
-    day.count = ifelse(year.month == 2020.333, 20, day.count),
+#    day.count = ifelse(year.month == 2020.333, 20, day.count),
     business.day.pct = day.count / month.length,
   ) %>% replace_na(
     as.list(sapply(term_names, function(.) return(0))) #i know, i know. really, i do. 
@@ -62,7 +62,7 @@ post_covid_final <- post_covid %>% add_column(
   mtd.fitted = cumsum(fitted.value),
   mtd.deposit = cumsum(deposit.amount),
   mtd.month.est = (mtd.deposit / mtd.fitted) * day.count,
-  mtd.error = (forecast / mtd.month.est) - 1,
+#  mtd.error = (forecast / mtd.month.est) - 1,
   month.fitted = sum(fitted.value),
   scale.factor = day.count / month.fitted,
 ) %>% ungroup()
